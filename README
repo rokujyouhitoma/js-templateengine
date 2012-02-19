@@ -1,0 +1,28 @@
+Env
+===
+
+- node(0.4.7)
+- nvm
+- npm
+- jasmine-node
+
+- java
+- git
+
+Setup
+-----
+
+$ git clone https://github.com/creationix/nvm.git ~/.nvm
+$ . ~/.nvm/nvm.sh
+$ nvm install v0.4.7
+$ curl http://npmjs.org/install.sh | sudo sh
+$ npm install -g jasmine-node
+
+Test
+----
+
+$ jasmine-node tests/
+
+or 
+
+$ make test
