@@ -416,7 +416,7 @@ StringIO.prototype['close'] = StringIO.prototype.close;
  * device.
  */
 StringIO.prototype.isatty = function() {
-  complain_ifclosed(this.closed);
+  _complain_ifclosed(this.closed);
   return false;
 };
 StringIO.prototype['isatty'] = StringIO.prototype.isatty;

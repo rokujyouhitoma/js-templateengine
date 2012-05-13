@@ -1,5 +1,8 @@
 THIRD=third_party
 
+js:
+	java -jar $(THIRD)/closure-compiler-git/build/compiler.jar --charset=UTF-8 --jscomp_error=checkTypes --compilation_level ADVANCED_OPTIMIZATIONS --js src/template/template.js --js_output_file build/compiled.js
+
 init:
 	@if [ ! -d $(THIRD) ]; then \
 		echo "mkdir $(THIRD)"; mkdir $(THIRD); \
@@ -16,6 +19,3 @@ update:
 
 test:
 	jasmine-node tests
-
-js:
-	java -jar $(THIRD)/closure-compiler-git/build/compiler.jar --charset=UTF-8 --jscomp_error=checkTypes --compilation_level ADVANCED_OPTIMIZATIONS --js src/template/template.js --js_output_file build/compiled.js
