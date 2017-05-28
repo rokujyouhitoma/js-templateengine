@@ -1,6 +1,59 @@
-/**
- * @author Tohru Ike <ike.tohru@gmail.com>
+"use strict";
+
+/*
+ * Porting from tornado/template.py([Tornado](https://github.com/tornadoweb/tornado)).
+ * Copyright 2011-2017 Ike Tohru<ike.tohru@gmail.com>
+ *
+ * NOTICE:
+ *  Original codes(tornado/template.py by Tornado) are using Python and licensed under the Apache License, Version 2.0
+ *  Please see below. There are quoted by tornado/template.py file.
+#
+# Copyright 2009 Facebook
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+ *
+ * WARNING, KNOWN ISSUE:
+ *   Curly braces: ``{{ ... }}`` can access to all object.
+ *   e.g. {{this}} can access to this object (almost, global object like window)
  */
+
+/**
+ * @interface
+ */
+var IWithItem = function(){};
+
+/**
+ * __enter__
+ * @return {IWithItem} .
+ */
+IWithItem.prototype.__enter__ = function(){};
+
+/**
+ * __exit__
+ */
+IWithItem.prototype.__exit__ = function(){};
+
+var statement = {};
+
+/**
+ * @param {IWithItem} item .
+ * @param {function(?IWithItem)} func .
+ */
+statement.with_stmt = function(item, func){
+    var with_item = item.__enter__();
+    func(with_item);
+    item.__exit__();
+};
 
 /**
  * @param {Function} childCtor Child class constructor.
@@ -15,36 +68,6 @@ function inherits(childCtor, parentCtor) {
     childCtor.prototype.constructor = childCtor;
 }
 
-/**
- * @param {!Object} self Should always be "this".
- * @param {*=} opt_methodName The method name if calling a super method.
- * @param {...*} var_args The rest of the arguments.
- * @return {*} The return value of the superclass method.
- */
-function base(self, opt_methodName, var_args) {
-    var caller = arguments.callee.caller;
-    if (caller.__super__) {
-        return caller.__super__.constructor.apply(
-            self, Array.prototype.slice.call(arguments, 1));
-    }
-    var args = Array.prototype.slice.call(arguments, 2);
-    var foundCaller = false;
-    for (var ctor = self.constructor; ctor; ctor = ctor.__super__ &&
-         ctor.__super__.constructor) {
-        if (ctor.prototype[opt_methodName] === caller) {
-            foundCaller = true;
-        } else if (foundCaller) {
-            return ctor.prototype[opt_methodName].apply(self, args);
-        }
-    }
-    if (self[opt_methodName] === caller) {
-        return self.constructor.prototype[opt_methodName].apply(self, args);
-    } else {
-        throw new Error('base called from a method of one name to a method of' +
-                        ' a different name');
-    }
-}
-
 /*
  * be based on Python class methods.
  */
@@ -53,12 +76,14 @@ var buildin = {};
 
 /**
  * @private
+ * @param {Arguments} args .
+ * @param {string} implementation_of .
+ * @return {number} .
  */
 buildin._min_max = function(args, implementation_of) {
     var length = args.length;
     var first = args[0];
     var last = args[length - 1];
-
     if (implementation_of === "min") {
         if (typeof last === "object" && last.hasOwnProperty('key')) {
             throw new NotImplementedError();
@@ -84,6 +109,7 @@ buildin._min_max = function(args, implementation_of) {
 
 /**
  * @param {...*} args The rest of the arguments.
+ * @return {number} .
  * @see Python <a href='http://docs.python.org/library/functions.html#max'>max</a> function.
  * @see PyPy pypy/module/__builtin__/functional#max
  */
@@ -93,6 +119,7 @@ buildin.max = function(args) {
 
 /**
  * @param {...*} args The rest of the arguments.
+ * @return {number} .
  * @see Python <a href='http://docs.python.org/library/functions.html#min'>min</a> function.
  * @see PyPy pypy/module/__builtin__/functional#min
  */
@@ -104,13 +131,12 @@ var array = {};
 
 /**
  * @param {Array} arr .
- * @param {string} value .
+ * @param {?string} value .
  * @return {boolean} .
  */
 array.contains = function(arr, value) {
-    var i = 0;
     var length = arr.length;
-    for (; i < length; ++i) {
+    for (var i = 0; i < length; ++i) {
         if (arr[i] === value) {
             return true;
         }
@@ -141,15 +167,7 @@ var string = {};
  */
 string.contains = function(value, fragment) {
     var result = value.search(fragment);
-    if (result === -1) {
-        return false;
-    }
-    else if (result > -1) {
-        return true;
-    }
-    else {
-        throw new Error('string.contains: ' + result);
-    }
+    return (-1 < result);
 };
 
 /**
@@ -164,22 +182,17 @@ string.count = function(str, sub, start, end, count) {
     start = start ? start : 0;
     end = end ? end : str.length;
     count = count ? count : 0;
-
     if (end < start) {
         return 0;
     }
-
     var p = str.indexOf(sub);
     if (p === -1) {
         return count;
     }
-
     count += 1;
-
     if (count === str.length) {
         return count;
     }
-
     return string.count(str.slice(start, end), sub, start, end, count);
 };
 
@@ -202,11 +215,7 @@ string.endswith = function(str, suffix) {
 string.find = function(str, sub, start, end) {
     start = start ? start : 0;
     end = end ? end : str.length;
-
-    /** @type {string} */
     str = str.slice(start, end);
-
-    /** @type {number} */
     var res = str.indexOf(sub);
     if (res > -1) {
         res += start;
@@ -230,12 +239,16 @@ string.strip = function(str) {
  */
 string.startwith = function(str, substr) {
     var parttern = new RegExp('^' + substr);
-    if (str.search(parttern) === 0) {
-        return true;
-    }
-    else {
-        return false;
-    }
+    return (str.search(parttern) === 0);
+};
+
+/**
+ * @param {string} str .
+ * @param {number} count .
+ * @return {string} .
+ */
+string.__mul__ = function(str, count) {
+    return str.repeat(count);
 };
 
 /*
@@ -249,7 +262,7 @@ string.startwith = function(str, substr) {
  * @extends {Error}
  */
 var NotImplementedError = function(message) {
-    base(this, message);
+    NotImplementedError.__super__.constructor.apply(this, [message]);
     this.name = 'NotImplementedError';
 };
 inherits(NotImplementedError, Error);
@@ -261,7 +274,7 @@ inherits(NotImplementedError, Error);
  * @extends {Error}
  */
 var AssertionError = function(message) {
-    base(this, message);
+    AssertionError.__super__.constructor.apply(this, [message]);
     this.name = 'AssertionError';
 };
 inherits(AssertionError, Error);
@@ -273,7 +286,7 @@ inherits(AssertionError, Error);
  * @extends {Error}
  */
 var ValueError = function(message) {
-    base(this, message);
+    ValueError.__super__.constructor.apply(this, [message]);
     this.name = 'ValueError';
 };
 inherits(ValueError, Error);
@@ -295,7 +308,7 @@ var IOError = function(var_args) {
     else {
         throw new NotImplementedError();
     }
-    base(this, message);
+    IOError.__super__.constructor.apply(this, [message]);
     this.name = 'IOError';
 };
 inherits(IOError, Error);
@@ -307,7 +320,7 @@ inherits(IOError, Error);
  * @extends {Error}
  */
 var StopIteration = function(message) {
-   base(this, message);
+   StopIteration.__super__.constructor.apply(this, [message]);
    this.name = 'StopIteration';
 };
 inherits(StopIteration, Error);
@@ -336,6 +349,7 @@ var posixpath = {};
 /**
  * Returns the directory component of a pathname
  * @param {string} p .
+ * @return {string} .
  */
 posixpath.dirname = function(p) {
     var i = string.find(p, '/');
@@ -348,7 +362,7 @@ posixpath.dirname = function(p) {
 a> modules.
  */
 
-/** @const */ var EINVAL = 22;
+const EINVAL = 22;
 
 /**
  * @param {boolean} closed .
@@ -365,10 +379,7 @@ function _complain_ifclosed(closed) {
  * @extends {Object}
  */
 var StringIO = function(buf) {
-    base(this);
-
     buf = buf ? buf : '';
-
     this.buf = buf;
     this.len = buf.length;
     this.buflist = [];
@@ -379,7 +390,7 @@ var StringIO = function(buf) {
 inherits(StringIO, Object);
 
 /**
- * return {StringIO} .
+ * @return {StringIO} .
  */
 StringIO.prototype.__iter__ = function() {
     return this;
@@ -414,10 +425,11 @@ StringIO.prototype['close'] = StringIO.prototype.close;
 /**
  * Returns false because StringIO objects are not connected to a tty-like
  * device.
+ * @return {boolean} .
  */
 StringIO.prototype.isatty = function() {
-  _complain_ifclosed(this.closed);
-  return false;
+    _complain_ifclosed(this.closed);
+    return false;
 };
 StringIO.prototype['isatty'] = StringIO.prototype.isatty;
 
@@ -428,6 +440,8 @@ StringIO.prototype['isatty'] = StringIO.prototype.isatty;
  * positioning); other values are 1 (seek relative to the current
  * position) and 2 (seek relative to the file's end).
  * There is no return value.
+ * @param {number} pos .
+ * @param {number} mode .
  */
 StringIO.prototype.seek = function(pos, mode) {
     mode = mode ? mode : 0;
@@ -448,6 +462,9 @@ StringIO.prototype['seek'] = StringIO.prototype.seek;
 
 /**
  * Return the file's current position.
+ * @param {number} pos .
+ * @param {number} mode .
+ * @return {number} .
  */
 StringIO.prototype.tell = function(pos, mode) {
     mode = mode ? mode : 0;
@@ -457,7 +474,8 @@ StringIO.prototype.tell = function(pos, mode) {
 StringIO.prototype['tell'] = StringIO.prototype.tell;
 
 /**
- * 
+ * @param {number} n .
+ * @return {string} r .
  */
 StringIO.prototype.read = function(n) {
     n = n ? n : -1;
@@ -510,6 +528,7 @@ StringIO.prototype['readline'] = StringIO.prototype.readline;
 
 /**
  * @param {number} sizehint .
+ * @return {Array<string>} .
  */
 StringIO.prototype.readlines = function(sizehint) {
     sizehint = sizehint ? sizehint : 0;
@@ -567,9 +586,8 @@ StringIO.prototype.write = function(s) {
     }
     if (spos > slen) {
         var str;
-        var i;
         var len = spos - slen;
-        for (i = 0; i < len; i++) {
+        for (var i = 0; i < len; ++i) {
             str += "\0";
         }
         this.buflist.push(str);
@@ -599,17 +617,15 @@ StringIO.prototype['write'] = StringIO.prototype.write;
  * @param {Array|Object} iterable .
  */
 StringIO.prototype.writelines = function(iterable) {
-    var key;
-    var line;
-    for (key in iterable) {
-        line = iterable[key];
+    for (var key in iterable) {
+        var line = iterable[key];
         this.write(line);
     }
 };
 StringIO.prototype['writelines'] = StringIO.prototype.writelines;
 
 /**
- * 
+ * flush
  */
 StringIO.prototype.flush = function() {
     _complain_ifclosed(this.closed);
@@ -641,13 +657,6 @@ Basic usage looks like::
     var t = new Template("<html>{{ myvalue }}</html>");
     console.log(t.generate({myvalue:"XXX"}));
 
-//NOTICE: NO SUPPORTED.
-//Loader is a class that loads templates from a root directory and caches
-//the compiled templates::
-//
-//    var loader = template.Loader("/home/btaylor")
-//    console.log(loader.load("test.html").generate({myvalue:"XXX"}));
-
 We compile all templates to raw JavaScript. Error-reporting is currently... uh,
 interesting. Syntax for the templates::
 
@@ -658,7 +667,7 @@ interesting. Syntax for the templates::
       </head>
       <body>
         <ul>
-          {% for key in students %}
+          {% for (key in students) %}
             {% block student %}
               <li>{{ students[key].name }}</li>
             {% end %}
@@ -673,16 +682,8 @@ interesting. Syntax for the templates::
     {% block title %}A bolder title{% end %}
 
     {% block student %}
-      <li><span style="bold">{{ student.name }}</span></li>
+      <li><span style="bold">{{ students[key].name }}</span></li>
     {% end %}
-
-Unlike most other template systems, we do not put any restrictions on the
-expressions you can include in your statements. if and for blocks get
-translated exactly into Python, you can do complex expressions like::
-
-   {% for student in [p for p in people if p.student and p.age > 23] %}
-     <li>{{ escape(student.name) }}</li>
-   {% end %}
 
 Translating directly to JavaScript means you can apply functions to expressions
 easily, like the escape() function in the examples above. You can pass
@@ -710,7 +711,6 @@ to the current autoescape setting and inserted into the output.  Other
 template directives use ``{% %}``.  These tags may be escaped as ``{{!``
 and ``{%!`` if you need to include a literal ``{{`` or ``{%`` in the output.
 
-//NO SUPPORTED.
 ``{% apply *function* %}...{% end %}``
     Applies a function to the output of all template code between ``apply``
     and ``end``::
@@ -727,7 +727,6 @@ and ``{%!`` if you need to include a literal ``{{`` or ``{%`` in the output.
         {% autoescape xhtml_escape %}
         {% autoescape None %}
 
-//SUPPORTED.
 ``{% block *name* %}...{% end %}``
     Indicates a named, replaceable block for use with ``{% extends %}``.
     Blocks in the parent template will be replaced with the contents of
@@ -740,37 +739,25 @@ and ``{%!`` if you need to include a literal ``{{`` or ``{%`` in the output.
         {% extends "base.html" %}
         {% block title %}My page title{% end %}
 
-//NO SUPPORTED.
 ``{% comment ... %}``
     A comment which will be removed from the template output.  Note that
     there is no ``{% end %}`` tag; the comment goes from the word ``comment``
     to the closing ``%}`` tag.
 
-//SUPPORTED.
 ``{% extends *filename* %}``
     Inherit from another template.  Templates that use ``extends`` should
     contain one or more ``block`` tags to replace content from the parent
     template.  Anything in the child template not contained in a ``block``
     tag will be ignored.  For an example, see the ``{% block %}`` tag.
 
-//NO SUPPORTED.
-``{% for *var* in *expr* %}...{% end %}``
-    Same as the python ``for`` statement.
+``{% for (*var* in *expr*) %}...{% end %}``
+    Same as the javascript ``for`` statement.  ``{% break %}`` and
+    ``{% continue %}`` may be used inside the loop.
 
-//DEPRECATED
-``{% from *x* import *y* %}``
-    Same as the python ``import`` statement.
-
-//SUPPORTED.
-``{% if *condition* %}...{% elif *condition* %}...{% else %}...{% end %}``
+``{% if (*condition*) %}...{% else if (*condition*) %}...{% else %}...{% end %}``
     Conditional statement - outputs the first section whose condition is
-    true.  (The ``elif`` and ``else`` sections are optional)
+    true.  (The ``else if`` and ``else`` sections are optional)
 
-//DEPRECATED
-``{% import *module* %}``
-    Same as the python ``import`` statement.
-
-//SUPPORTED.
 ``{% include *filename* %}``
     Includes another template file.  The included file can see all the local
     variables as if it were copied directly to the point of the ``include``
@@ -778,28 +765,23 @@ and ``{%!`` if you need to include a literal ``{{`` or ``{%`` in the output.
     Alternately, ``{% module Template(filename, **kwargs) %}`` may be used
     to include another template with an isolated namespace.
 
-//DEPRECATED
-``{% module *expr* %}``
-    Renders a `~tornado.web.UIModule`.  The output of the ``UIModule`` is
-    not escaped::
-
-        {% module Template("foo.html", arg=42) %}
-
-//NO SUPPORTED
 ``{% raw *expr* %}``
     Outputs the result of the given expression without autoescaping.
 
-//NO SUPPORTED
-``{% set *x* = *y* %}``
+``{% set var *x* = *y* %}``
     Sets a local variable.
 
-//NO SUPPORTED
-``{% try %}...{% except %}...{% finally %}...{% end %}``
-    Same as the python ``try`` statement.
+``{% try %}...{% catch(e) %}...{% end %}``
+    Same as the javascript ``try`` statement.
 
-//NO SUPPORTED
-``{% while *condition* %}... {% end %}``
-    Same as the python ``while`` statement.
+``{% while (*condition*) %}... {% end %}``
+    Same as the javascript ``while`` statement. ``{% break %}`` and
+    ``{% continue %}`` may be used inside the loop.
+
+``{% whitespace *mode* %}``
+    Sets the whitespace mode for the remainder of the current file
+    (or until the next ``{% whitespace %}`` directive). See
+    `filter_whitespace` for available options.
 */
 
 /**
@@ -810,29 +792,29 @@ var escape_ = {};
 /**
  * @type {Array.<string>}
  */
-escape_['_XHTML_ESCAPE'] = ['&', '<', '>', '"'];
+escape_['_XHTML_ESCAPE'] = ['&', '<', '>', '"', '\''];
 
 /**
  * @enum {string}
  */
-escape_['_XHTML_ESCAPEDICT'] = {'&': '&amp;',
-                                '<': '&lt;',
-                                '>': '&gt;',
-                                '"': '&quot;'};
+escape_['_XHTML_ESCAPE_DICT'] = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    '\'': '&#39;',
+};
 
 /**
  * @param {string} value Target escape value.
  * @return {string} escaped value.
  */
 escape_.xhtml_escape = function(value) {
-    var match;
-    var chr;
-    var i = 0;
     var length = escape_['_XHTML_ESCAPE'].length;
-    for (;i < length; ++i) {
-        chr = escape_['_XHTML_ESCAPE'][i];
-        match = new RegExp(chr, 'g');
-        value = value.replace(match, escape_['_XHTML_ESCAPEDICT'][chr]);
+    for (var i = 0; i < length; ++i) {
+        var chr = escape_['_XHTML_ESCAPE'][i];
+        var match = new RegExp(chr, 'g');
+        value = value.replace(match, escape_['_XHTML_ESCAPE_DICT'][chr]);
     }
     return value;
 };
@@ -847,33 +829,79 @@ escape_.native_str = function(value) {
 };
 
 /** @const */ var _DEFAULT_AUTOESCAPE = 'xhtml_escape';
-//var _UNSET = new Object();
 var _UNSET = {};
+
+/**
+ * Transform whitespace in ``text`` according to ``mode``.
+ *  Available modes are:
+ *  * ``all``: Return all whitespace unmodified.
+ *  * ``single``: Collapse consecutive whitespace with a single whitespace
+ *    character, preserving newlines.
+ *  * ``oneline``: Collapse all runs of whitespace into a single space
+ *    character, removing all newlines in the process.
+ * @param {string} mode .
+ * @param {string} text .
+ * @return {string} .
+ */
+var filter_whitespace = function(mode, text) {
+    if (mode === 'all') {
+        return text;
+    } else if (mode === 'single') {
+        text = text.replace(/([\t ]+)/g, ' ', text);
+        text = text.replace(/(\s*\n\s*)/g, '\n', text);
+        return text;
+    } else if (mode === 'oneline') {
+        text = text.replace(/(\s+)/g, ' ', text);
+        return text;
+    } else {
+        throw new Error("invalid whitespace mode " + mode);
+    }
+};
+
+/**
+ * @param {Object} obj .
+ * @return {string} .
+ */
+var js_variables = function(obj){
+    var buf = [];
+    for(var key in obj){
+        buf.push('var ' + key + ' = ' + 'namespace["' + key + '"];');
+    }
+    return buf.join("");
+};
 
 /**
  * A compiled template.
  * We compile into Python from the given template_string. You can generate
  * the template from variables with generate().
  * @param {string} template_string .
- * @param {string} name .
- * @param {?BaseLoader=} loader .
- * @param {?boolean=} compress_whitespace .
- * @param {?Object=} autoescape .
+ * @param {string=} name .
+ * @param {BaseLoader=} loader .
+ * @param {Object=} autoescape .
+ * @param {?string=} whitespace .
  * @constructor
  * @extends {Object}
  */
-var Template = function(template_string, name, loader, compress_whitespace,
-                        autoescape) {
+var Template = function(template_string, name, loader, autoescape, whitespace) {
     name = name ? name : '<string>';
     loader = loader ? loader : null;
-    compress_whitespace = compress_whitespace ? compress_whitespace : null;
     autoescape = autoescape ? autoescape : _UNSET;
-
+    whitespace = whitespace ? whitespace : null;
     this.name = name;
-    if (compress_whitespace === null) {
-        compress_whitespace = string.endswith(name, '.html') ||
-            string.endswith(name, '.js');
+    if (!whitespace) {
+        if(loader && loader.whitespace){
+            whitespace = loader.whitespace;
+        } else {
+            // Whitespace defaults by filename.
+            if (string.endswith(name, '.html') || string.endswith(name, '.js')) {
+                whitespace = 'single';
+            } else {
+                whitespace = 'all';
+            }
+        }
     }
+    // Validate the whitespace setting.
+    filter_whitespace(whitespace, '');
     if (autoescape !== _UNSET) {
         this.autoescape = autoescape;
     } else if (loader) {
@@ -882,29 +910,15 @@ var Template = function(template_string, name, loader, compress_whitespace,
         this.autoescape = _DEFAULT_AUTOESCAPE;
     }
     this.namespace = loader ? loader.namespace : {};
-    var reader = new _TemplateReader(name, escape_.native_str(template_string));
-    this.file = new _File(_parse(reader, this));
-
-    /**
-     * @type {string}
-     */
-    this.code = this._generate_js(loader, compress_whitespace);
-
-    /**
-     * @type {string}
-     */
-    var startFragment = 'return function(namespace) {for(var key in namespace) {this[key] = namespace[key];}';
-
-    /**
-     * @type {string}
-     */
-    var endFragment = '};';
-    this.code = startFragment + this.code + endFragment;
-
+    var reader = new _TemplateReader(name, escape_.native_str(template_string), whitespace);
+    var parsed = _parse(reader, this);
+    this.file = new _File(parsed);
+    /** @type {string} */
+    this.code = this._generate_js(loader);
     try {
         this.compiled = new Function(this.code);
     } catch (e) {
-        console.log('code: ' + this.code);
+        console.error('code: ' + this.code);
         throw e;
     }
 };
@@ -917,29 +931,23 @@ inherits(Template, Object);
  */
 Template.prototype.generate = function(kwargs) {
     kwargs = kwargs ? kwargs : {};
-
     var namespace = {
         'escape': escape_.xhtml_escape,
-        'xhtml_escape': escape_.xhtml_escape
+        'xhtml_escape': escape_.xhtml_escape,
+        'js_variables': js_variables,
     };
-
-    var key;
-    for (key in this.namespace) {
+    for (var key in this.namespace) {
         namespace[key] = this.namespace[key];
     }
-
-    for (key in kwargs) {
+    for (var key in kwargs) {
         namespace[key] = kwargs[key];
     }
-
-    //namespace['_execute'] = this.compiled();
-    //var execute = namespace['_execute'];
     namespace._execute = this.compiled();
     var execute = namespace._execute;
     try {
         return execute(namespace);
     } catch (x) {
-        console.log(x);
+        console.error(x);
         throw new Error(x);
     }
 };
@@ -947,27 +955,22 @@ Template.prototype['generate'] = Template.prototype.generate;
 
 /**
  * @param {BaseLoader} loader .
- * @param {boolean} compress_whitespace .
  * @return {string} .
  * @protected
  */
-Template.prototype._generate_js = function(loader, compress_whitespace) {
+Template.prototype._generate_js = function(loader) {
     /** @type {StringIO} } */
     var buffer = new StringIO();
     // named_blocks maps from names to _NamedBlock objects
-    named_blocks = {};
+    var named_blocks = {};
     var ancestors = this._get_ancestors(loader);
     ancestors.reverse();
-    var key;
-    var ancestor;
-
-    for (key in ancestors) {
-        ancestor = ancestors[key];
+    for(var i = 0; i < ancestors.length; ++i){
+        var ancestor = ancestors[i];
         ancestor.find_named_blocks(loader, named_blocks);
     }
     this.file.find_named_blocks(loader, named_blocks);
-    var writer = new _CodeWriter(buffer, named_blocks, loader, this,
-                                 compress_whitespace);
+    var writer = new _CodeWriter(buffer, named_blocks, loader, this);
     ancestors[0].generate(writer);
     return buffer.getvalue();
 };
@@ -979,10 +982,8 @@ Template.prototype._generate_js = function(loader, compress_whitespace) {
  */
 Template.prototype._get_ancestors = function(loader) {
     var ancestors = [this.file];
-    var key;
-    var chunk;
-    for (key in this.file.body.chunks) {
-        chunk = this.file.body.chunks[key];
+    for (var key in this.file.body.chunks) {
+        var chunk = this.file.body.chunks[key];
         if (chunk instanceof _ExtendsBlock) {
             if (!loader) {
                 throw new ParseError('{% extends %} block found, but no' +
@@ -997,24 +998,27 @@ Template.prototype._get_ancestors = function(loader) {
 
 /**
  * Base class for template loaders.
+ *
+ * Creates a template loader.
+ *
+ * root_directory may be the empty string if this loader does not
+ * use the filesystem.
+ *
+ * autoescape must be either None or a string naming a function
+ * in the template namespace, such as "xhtml_escape".
  * @param {string} autoescape .
  * @param {Object} namespace .
+ * @param {?string} whitespace .
  * @constructor
  * @extends {Object}
  */
-var BaseLoader = function(autoescape, namespace) {
-    //Creates a template loader.
-    //
-    //root_directory may be the empty string if this loader does not
-    //use the filesystem.
-    //
-    //autoescape must be either None or a string naming a function
-    //in the template namespace, such as "xhtml_escape".
+var BaseLoader = function(autoescape, namespace, whitespace) {
     autoescape = autoescape ? autoescape : _DEFAULT_AUTOESCAPE;
     namespace = namespace ? namespace : null;
-
+    whitespace = whitespace ? whitespace : null;
     this.autoescape = autoescape;
     this.namespace = namespace;
+    this.whitespace = whitespace;
     this.templates = {};
 };
 inherits(BaseLoader, Object);
@@ -1040,7 +1044,7 @@ BaseLoader.prototype.resolve_path = function(name, parent_path) {
 /**
  * Loads a template.
  * @param {string} name .
- * @param {?string} parent_path .
+ * @param {?string=} parent_path .
  * @return {Template} .
  */
 BaseLoader.prototype.load = function(name, parent_path) {
@@ -1070,21 +1074,21 @@ BaseLoader.prototype._create_template = function(name) {
  * @extends {BaseLoader}
  */
 var Loader = function() {
-    //TODO: xxx
     throw new NotImplementedError();
 };
 inherits(Loader, BaseLoader);
 
+/**
+ * resolve path
+ */
 Loader.prototype.resolve_path = function() {
-    //TODO: xxx
     throw new NotImplementedError();
 };
 
 /**
- * @override
+ * create template
  */
 Loader.prototype._create_template = function() {
-    //TODO: xxx
     throw new NotImplementedError();
 };
 
@@ -1095,8 +1099,7 @@ Loader.prototype._create_template = function() {
  * @extends {BaseLoader}
  */
 var DictLoader = function(dict) {
-    //var args = Array.prototype.slice.call(arguments, 1);
-    base(this);
+    DictLoader.__super__.constructor.apply(this, Array.prototype.slice.call(arguments, 1));
     this.dict = dict;
 };
 inherits(DictLoader, BaseLoader);
@@ -1112,7 +1115,6 @@ DictLoader.prototype.resolve_path = function(name, parent_path) {
         !string.startwith(parent_path, '<') &&
         !string.startwith(parent_path, '/') &&
         !string.startwith(name, '/')) {
-
         //TODO: xxx
         //var file_dir = posixpath.dirname(parent_path);
         //name = posixpath.normpath(posixpath.join(file_dir, name));
@@ -1126,7 +1128,11 @@ DictLoader.prototype.resolve_path = function(name, parent_path) {
  * @override
  */
 DictLoader.prototype._create_template = function(name) {
-    return new Template(this.dict[name], name, this);
+    if (!(name in this.dict)){
+        throw new Error("Dict loader can not load template. name: " + name);
+    }
+    var template_string = this.dict[name];
+    return new Template(template_string, name, this);
 };
 
 /**
@@ -1137,7 +1143,6 @@ inherits(_Node, Object);
 
 /**
  * @return {Array} .
- * @constructor
  */
 _Node.prototype.each_child = function() {
     return [];
@@ -1155,10 +1160,9 @@ _Node.prototype.generate = function(writer) {
  * @param {Object} named_blocks .
  */
 _Node.prototype.find_named_blocks = function(loader, named_blocks) {
-    var key;
     var children = this.each_child();
-    for (key in children) {
-        var child = children[key];
+    for(var i = 0; i < children.length; ++i){
+        var child = children[i];
         child.find_named_blocks(loader, named_blocks);
     }
 };
@@ -1171,6 +1175,7 @@ _Node.prototype['find_named_blocks'] = _Node.prototype.find_named_blocks;
  */
 var _File = function(body) {
     this.body = body;
+    this.line = 0;
 };
 inherits(_File, _Node);
 
@@ -1179,9 +1184,18 @@ inherits(_File, _Node);
  * @override
  */
 _File.prototype.generate = function(writer) {
-    writer.write_line('_buffer = [];');
-    this.body.generate(writer);
-    writer.write_line('return _buffer.join("");');
+    writer.write_line('return function(namespace){', this.line);
+    statement.with_stmt(writer.indent(), function(){
+        writer.write_line('eval(namespace.js_variables(namespace));', this.line); //TODO: suggest that not use eval.
+        writer.write_line('return function(){', this.line);
+        statement.with_stmt(writer.indent(), function(){
+            writer.write_line('var _buffer = [];', this.line);
+            this.body.generate(writer);
+            writer.write_line('return _buffer.join("");', this.line);
+        }.bind(this));
+        writer.write_line('}();', this.line);
+    }.bind(this));
+    writer.write_line('};', this.line);
 };
 
 /**
@@ -1207,10 +1221,9 @@ inherits(_ChunkList, _Node);
  * @override
  */
 _ChunkList.prototype.generate = function(writer) {
-    var i = 0;
     var chunks = this.chunks;
     var len = chunks.length;
-    for (; i < len; ++i) {
+    for (var i = 0; i < len; ++i) {
         chunks[i].generate(writer);
     }
 };
@@ -1227,13 +1240,15 @@ _ChunkList.prototype.each_child = function() {
  * @param {string} name .
  * @param {_ChunkList} body .
  * @param {Template} template .
+ * @param {number} line .
  * @constructor
  * @extends {_Node}
  */
-var _NamedBlock = function(name, body, template) {
+var _NamedBlock = function(name, body, template, line) {
     this.name = name;
     this.body = body;
     this.template = template;
+    this.line = line;
 };
 inherits(_NamedBlock, _Node);
 
@@ -1263,7 +1278,7 @@ _NamedBlock.prototype.generate = function(writer) {
  */
 _NamedBlock.prototype.find_named_blocks = function(loader, named_blocks) {
     named_blocks[this.name] = this;
-    base(this, 'find_named_blocks', loader, named_blocks);
+    _NamedBlock.__super__['find_named_blocks'].apply(this, [loader, named_blocks]);
 };
 _NamedBlock.prototype['find_named_blocks'] = _NamedBlock.prototype.find_named_blocks;
 
@@ -1280,12 +1295,14 @@ inherits(_ExtendsBlock, _Node);
 /**
  * @param {string} name .
  * @param {_TemplateReader} reader .
+ * @param {number} line .
  * @constructor
  * @extends {_Node}
  */
-var _IncludeBlock = function(name, reader) {
+var _IncludeBlock = function(name, reader, line) {
     this.name = name;
     this.template_name = reader.name;
+    this.line = line;
 };
 inherits(_IncludeBlock, _Node);
 
@@ -1311,28 +1328,54 @@ _IncludeBlock.prototype.generate = function(writer) {
 
 /**
  * @param {string} method .
+ * @param {number} line .
  * @param {_ChunkList} body .
  * @constructor
  * @extends {_Node}
  */
-var _ApplyBlock = function(method, body) {
+var _ApplyBlock = function(method, line, body) {
     body = body ? body : null;
-
     this.method = method;
+    this.line = line;
     this.body = body;
-
-    throw new NotImplementedError();
 };
 inherits(_ApplyBlock, _Node);
 
 /**
+ * @param {_CodeWriter} writer .
+ * @override
+ */
+_ApplyBlock.prototype.generate = function(writer) {
+    var method_name = '_apply' + writer.apply_counter;
+    writer.apply_counter += 1;
+    writer.write_line('function ' + method_name + '(){', this.line);
+    statement.with_stmt(writer.indent(), function(){
+        writer.write_line('var _buffer = [];', this.line);
+        this.body.generate(writer);
+        writer.write_line('return _buffer.join("");', this.line);
+    }.bind(this));
+    writer.write_line('}', this.line);
+    writer.write_line('_buffer.push(' + this.method + '(' + method_name + '()));' , this.line);
+};
+
+/**
+ * @return {Array.<_ChunkList>} .
+ * @override
+ */
+_ApplyBlock.prototype.each_child = function() {
+    return [this.body];
+};
+
+/**
  * @param {string} statement .
+ * @param {number} line .
  * @param {_ChunkList} body .
  * @constructor
  * @extends {_Node}
  */
-var _ControlBlock = function(statement, body) {
+var _ControlBlock = function(statement, line, body) {
     this.statement = statement;
+    this.line = line;
     this.body = body;
 };
 inherits(_ControlBlock, _Node);
@@ -1350,19 +1393,23 @@ _ControlBlock.prototype.each_child = function() {
  * @override
  */
 _ControlBlock.prototype.generate = function(writer) {
-    writer.write_line(this.statement);
-    writer.write_line('{');
-    this.body.generate(writer);
-    writer.write_line('}');
+    writer.write_line(this.statement, this.line);
+    writer.write_line('{', this.line);
+    statement.with_stmt(writer.indent(), function(){
+        this.body.generate(writer);
+    }.bind(this));
+    writer.write_line('}', this.line);
 };
 
 /**
  * @param {string} statement .
+ * @param {number} line .
  * @constructor
  * @extends {_Node}
  */
-var _IntermediateControlBlock = function(statement) {
+var _IntermediateControlBlock = function(statement, line) {
     this.statement = statement;
+    this.line = line;
 };
 inherits(_IntermediateControlBlock, _Node);
 
@@ -1371,32 +1418,41 @@ inherits(_IntermediateControlBlock, _Node);
  * @override
  */
 _IntermediateControlBlock.prototype.generate = function(writer) {
-    writer.write_line('}' + this.statement + '{');
+    writer.write_line('}' + this.statement + '{', this.line);
 };
 
 /**
  * @param {string} statement .
+ * @param {number} line .
  * @constructor
  * @extends {_Node}
  */
-var _Statement = function(statement) {
+var _Statement = function(statement, line) {
     this.statement = statement;
-
-    throw new NotImplementedError();
+    this.line = line;
 };
 inherits(_Statement, _Node);
 
 /**
+ * @param {_CodeWriter} writer .
+ * @override
+ */
+_Statement.prototype.generate = function(writer) {
+    writer.write_line(this.statement, this.line);
+};
+
+/**
  * @param {string} expression .
- * @param {?boolean=} row .
+ * @param {number} line .
+ * @param {?boolean=} raw .
  * @constructor
  * @extends {_Node}
  */
-var _Expression = function(expression, row) {
-    row = row ? row : false;
-
+var _Expression = function(expression, line, raw) {
+    raw = raw ? raw : false;
     this.expression = expression;
-    this.row = row;
+    this.line = line;
+    this.raw = raw;
 };
 inherits(_Expression, _Node);
 
@@ -1405,27 +1461,24 @@ inherits(_Expression, _Node);
  * @override
  */
 _Expression.prototype.generate = function(writer) {
-    writer.write_line('var _tmp = ' + this.expression + ';');
-    writer.write_line('_buffer.push(_tmp);');
+    writer.write_line('var _tmp = ' + this.expression + ';', this.line);
+    if(!this.raw && (writer.current_template.autoescape != null)) {
+        writer.write_line('_tmp = ' + writer.current_template.autoescape + '(String(_tmp));', this.line);
+    }
+    writer.write_line('_buffer.push(_tmp);', this.line);
 };
-
-/**
- * @param {string} expression .
- * @constructor
- * @extends {_Expression}
- */
-var _Module = function(expression) {
-    throw new NotImplementedError();
-};
-inherits(_Module, _Expression);
 
 /**
  * @param {string} value .
+ * @param {number} line .
+ * @param {string} whitespace .
  * @constructor
  * @extends {_Node}
  */
-var _Text = function(value) {
+var _Text = function(value, line, whitespace) {
     this.value = value;
+    this.line = line;
+    this.whitespace = whitespace;
 };
 inherits(_Text, _Node);
 
@@ -1435,15 +1488,12 @@ inherits(_Text, _Node);
  */
 _Text.prototype.generate = function(writer) {
     var value = this.value;
-
     // Compress lots of white space to a single character. If the whitespace
     // breaks a line, have it continue to break a line, but just with a
     // single \n character
-    if (writer.compress_whitespace && !(string.contains(value, '<pre>'))) {
-        value = value.replace(/([\t ]+)/g, ' ', value);
-        value = value.replace(/(\s*\n\s*)/g, '\n', value);
+    if (!(string.contains(value, '<pre>'))) {
+        value = filter_whitespace(this.whitespace, value);
     }
-
     //JavaScript specific implements.
     if (string.contains(value, '\n')) {
         value = value.replace(/(\n)/g, '\\n', value);
@@ -1451,63 +1501,108 @@ _Text.prototype.generate = function(writer) {
     if (string.contains(value, '"')) {
         value = value.replace(/(")/g, '\\"', value);
     }
-
     if (value) {
-        writer.write_line('_buffer.push("' + value + '");');
+        writer.write_line('_buffer.push("' + value + '");', this.line);
     }
 };
 
 /**
+ * Raised for template syntax errors.
  * @param {string} message .
+ * @param {?string=} filename .
+ * @param {?number=} lineno .
  * @constructor
  * @extends {Error}
  */
-var ParseError = function(message) {
-    base(this, message);
-
-    // Raised for template syntax errors.
+var ParseError = function(message, filename, lineno) {
+    filename = filename ? filename : null;
+    lineno = lineno ? lineno : null;
+    ParseError.__super__.constructor.apply(this, [message]);
     this.name = 'ParseError';
     this.message = message || '';
+    this.filename = filename;
+    this.lineno = lineno;
 };
 inherits(ParseError, Error);
+
+/**
+ * @return {string} .
+ */
+ParseError.prototype.toString = function(){
+    return this.message + " at " + this.filename + ":" + this.lineno;
+};
 
 /**
  * @param {StringIO} file .
  * @param {Object} named_blocks .
  * @param {BaseLoader} loader .
  * @param {Template} current_template .
- * @param {boolean} compress_whitespace .
  * @constructor
  * @extends {Object}
  */
-var _CodeWriter = function(file, named_blocks, loader, current_template,
-                           compress_whitespace) {
+var _CodeWriter = function(file, named_blocks, loader, current_template) {
     this.file = file;
     this.named_blocks = named_blocks;
     this.loader = loader;
     this.current_template = current_template;
-    this.compress_whitespace = compress_whitespace;
     this.apply_counter = 0;
+    this._indent = 0;
 };
 inherits(_CodeWriter, Object);
 
 /**
- * @param {string} line .
+ * @return {number} indent .
  */
-_CodeWriter.prototype.write_line = function(line) {
-    this.file.write(line + '\n');
+_CodeWriter.prototype.indent_size = function(){
+    return this._indent;
+};
+
+/**
+ * @return {IWithItem} .
+ */
+_CodeWriter.prototype.indent = function(){
+    /**
+     * @constructor
+     * @implements {IWithItem}
+     */
+    var Indenter = function(){};
+    Indenter.prototype.__enter__ = function(){
+        this._indent += 1;
+        return this;
+    }.bind(this);
+    Indenter.prototype.__exit__ = function(){
+        assert(this._indent > 0);
+        this._indent -= 1;
+    }.bind(this);
+    return new Indenter();
+};
+
+/**
+ * @param {string} line .
+ * @param {number} line_number .
+ * @param {?number=} indent .
+ */
+_CodeWriter.prototype.write_line = function(line, line_number, indent) {
+    indent = indent ? indent : null;
+    if(indent == null){
+        indent = this._indent;
+    }
+    var line_comment = ' // ' + this.current_template.name + ':' + line_number;
+    this.file.write(string.__mul__('\t', indent) + line + line_comment + '\n');
 };
 
 /**
  * @param {string} name Name.
  * @param {string} text Text.
+ * @param {string} whitespace .
  * @constructor
  * @extends {Object}
  */
-var _TemplateReader = function(name, text) {
+var _TemplateReader = function(name, text, whitespace) {
     this.name = name;
     this.text = text;
-    this.line = 0;
+    this.whitespace = whitespace;
+    this.line = 1;
     this.pos = 0;
 };
 inherits(_TemplateReader, Object);
@@ -1521,11 +1616,9 @@ inherits(_TemplateReader, Object);
 _TemplateReader.prototype.find = function(needle, start, end) {
     start = start ? start : 0;
     end = end ? end : null;
-
     assert(start >= 0);
     var pos = this.pos;
     start += pos;
-
     var index;
     if (end === null) {
         index = string.find(this.text, needle, start, end);
@@ -1546,7 +1639,6 @@ _TemplateReader.prototype.find = function(needle, start, end) {
  */
 _TemplateReader.prototype.consume = function(count) {
     count = count ? count : null;
-
     if (count === null) {
         count = this.text.length - this.pos;
     }
@@ -1587,56 +1679,52 @@ _TemplateReader.prototype.__getitem__ = function(key) {
 };
 
 /**
- *
+ * __str__
  */
 _TemplateReader.prototype.__str__ = function() {
     throw new NotImplementedError('xxx: __str__');
 };
 
 /**
- * @param {string} code .
+ * @param {string} msg .
  */
-function _format_code(code) {
-    throw new NotImplementedError('xxx: _format_code');
-}
+_TemplateReader.prototype.raise_parse_error = function(msg) {
+    throw new ParseError(msg, this.name, this.line);
+};
 
 /**
  * @param {_TemplateReader} reader .
  * @param {Template} template .
  * @param {?string=} in_block .
+ * @param {?string=} in_loop .
  * @return {_ChunkList} body.
  */
-var _parse = function(reader, template, in_block) {
+var _parse = function(reader, template, in_block, in_loop) {
     in_block = in_block ? in_block : null;
-
+    in_loop = in_loop ? in_loop : null;
     var body = new _ChunkList([]);
     while (true) {
         // Find next template directive
         var curly = 0;
-
         var contents;
         var end;
         var block;
-
         while (true) {
             curly = reader.find('{', curly);
             if (curly === -1 || curly + 1 === reader.remaining()) {
                 // EOF
                 if (in_block) {
-                    throw new ParseError('Missing {%% end %%} block for ' +
-                                         in_block);
+                    reader.raise_parse_error('Missing {% end %} block for ' + in_block);
                 }
-                body.chunks.push(new _Text(reader.consume()));
+                body.chunks.push(new _Text(reader.consume(), reader.line, reader.whitespace));
                 return body;
             }
-
             // If the first curly brace is not the start of a special token,
             // start searching from the character after it
-            if (!array.contains(['{', '%'], reader.__getitem__(curly + 1))) {
+            if (!array.contains(['{', '%', '#'], reader.__getitem__(curly + 1))) {
                 curly += 1;
                 continue;
             }
-
             // When there are more than 2 curlies in a row, use the
             // innermost ones.  This is useful when generating languages
             // like latex where curlies are also meaningful
@@ -1648,161 +1736,167 @@ var _parse = function(reader, template, in_block) {
             }
             break;
         }
-
         // Append any text before the special token
         if (curly > 0) {
-            body.chunks.push(new _Text(reader.consume(curly)));
+            body.chunks.push(new _Text(reader.consume(curly), reader.line, reader.whitespace));
         }
-
         var start_brace = reader.consume(2);
         var line = reader.line;
-
         // Template directives may be escaped as "{{!" or "{%!".
         // In this case output the braces and consume the "!".
         // This is especially useful in conjunction with jquery templates,
         // which also use double braces.
         if (reader.remaining() && reader.__getitem__(0) === '!') {
             reader.consume(1);
-            body.chunks.push(new _Text(start_brace));
+            body.chunks.push(new _Text(start_brace, line, reader.whitespace));
             continue;
         }
-
+        // Comment
+        if (start_brace === '{#') {
+            end = reader.find('#}');
+            if (end === -1) {
+                reader.raise_parse_error('Missing end comment on line ' + String(line));
+            }
+            contents = string.strip(reader.consume(end));
+            reader.consume(2);
+            continue;
+        }
         // Expression
         if (start_brace === '{{') {
             end = reader.find('}}');
             if (end === -1 || reader.find('\n', 0, end) !== -1) {
-                throw new ParseError('Missing end expression }} on line ' +
-                                     String(line));
+                reader.raise_parse_error('Missing end expression }} on line ' + String(line));
             }
             contents = string.strip(reader.consume(end));
             reader.consume(2);
             if (!contents) {
-                throw new ParseError('Empty expression on line ' +
-                                     String(line));
+                reader.raise_parse_error('Empty expression on line ' + String(line));
             }
-            body.chunks.push(new _Expression(contents));
+            body.chunks.push(new _Expression(contents, line));
             continue;
         }
-
         // Block
         assert(start_brace == '{%', start_brace);
         end = reader.find('%}');
         if (end === -1 || reader.find('\n', 0, end) !== -1) {
-            throw new ParseError('Missing end block %%} on line ' + line);
+            reader.raise_parse_error('Missing end block %} on line ' + line);
         }
         contents = string.strip(reader.consume(end));
         reader.consume(2);
         if (contents === '') {
-            throw new ParseError('Empty block tag ({%% %%}) on line ' + line);
+            reader.raise_parse_error('Empty block tag ({% %}) on line ' + line);
         }
-
         var partition = contents.split(' ');
         var operator = partition.shift();
-        var suffix = partition.join('');
-        //console.log('operator, suffix: ' + operator + ', ' + suffix);
-
+        var suffix = partition.join(' ');
         // Intermediate ('else', 'elif', etc) blocks
         var intermediate_blocks = {
-            'else': ['if', 'for', 'while'],
-            'elif': ['if'],
-            'except': ['try'],
-            'finally': ['try']
+            'else': ['if'],
+            'catch(e)': ['try'],
         };
-
         var allowed_parents = object.get(intermediate_blocks, operator);
         if (allowed_parents !== null) {
             if (!in_block) {
-                throw new ParseError(operator + ' outside ' + allowed_parents +
-                                     ' block');
+                reader.raise_parse_error(operator + ' outside ' + allowed_parents + ' block');
             }
             if (allowed_parents instanceof Array && !array.contains(allowed_parents, in_block)) {
-                throw new ParseError(operator +
-                                     ' block cannot be attached to ' +
-                                     in_block + 'block');
+                reader.raise_parse_error(operator +' block cannot be attached to ' + in_block + 'block');
             }
-            body.chunks.push(new _IntermediateControlBlock(contents));
+            body.chunks.push(new _IntermediateControlBlock(contents, line));
             continue;
-
         // End tag
         } else if (operator === 'end') {
             if (!in_block) {
-                throw new ParseError('Extra {%% end %%} block on line ' + line);
+                reader.raise_parse_error('Extra {% end %} block on line ' + line);
             }
             return body;
-
-        } else if (array.contains(['extends', 'include', 'set', 'import', 'from',
-                                 'comment', 'autoescape', 'raw', 'module'],
-                                operator)) {
-            if (operator === 'end') {
+        } else if (array.contains([
+            'extends',
+            'include',
+            'set',
+            'comment',
+            'autoescape',
+            'whitespace',
+            'raw',
+        ], operator)) {
+            if (operator === 'comment') {
                 continue;
             }
             if (operator === 'extends') {
                 suffix = suffix.replace(/[\"\']/g, ''); //TODO: xxx
                 if (!suffix) {
-                    throw new ParseError('extends missing file path on line ' +line);
+                    reader.raise_parse_error('extends missing file path on line ' +line);
                 }
                 block = new _ExtendsBlock(suffix);
-            }
-            else if (array.contains(['import', 'from'], operator)) {
-                throw new NotImplementedError('xxx: import or from');
             }
             else if (operator === 'include') {
                 suffix = suffix.replace(/[\"\']/g, ''); //TODO: xxx
                 if (!suffix) {
-                    throw new ParseError('include missing file path on line ' +
-                                         line);
+                    reader.raise_parse_error('include missing file path on line ' + line);
                 }
-                block = new _IncludeBlock(suffix, reader);
+                block = new _IncludeBlock(suffix, reader, line);
             }
             else if (operator === 'set') {
                 if (!suffix) {
-                    throw new ParseError('set missing statement on line ' + line);
+                    reader.raise_parse_error('set missing statement on line ' + line);
                 }
-                block = new _Statement(suffix);
+                block = new _Statement(suffix, line);
             }
             else if (operator === 'autoescape') {
-                throw new NotImplementedError('xxx: autoescape');
+                var fn = string.strip(suffix);
+                if (fn === 'null') {
+                    fn = null;
+                }
+                template.autoescape = fn;
+                continue;
+            }
+            else if (operator === 'whitespace') {
+                var mode = string.strip(suffix);
+                // Validate the selected mode
+                filter_whitespace(mode, '');
+                reader.whitespace = mode;
+                continue;
             }
             else if (operator === 'raw') {
-                block = new _Expression(suffix, true);
-            }
-            else if (operator === 'module') {
-                block = new _Module(suffix);
+                block = new _Expression(suffix, line, true);
             }
             body.chunks.push(block);
             continue;
-        } else if (array.contains(['apply', 'block', 'try', 'if', 'for', 'while'],
-                                  operator)) {
+        } else if (array.contains(['apply', 'block', 'try', 'if', 'for', 'while'], operator)) {
             // parse inner body recursively
-            var block_body = _parse(reader, template, operator);
+            var block_body;
+            if (array.contains(['for', 'while'], operator)) {
+                block_body = _parse(reader, template, operator, operator);
+            } else if (operator === 'apply') {
+                // apply creates a nested function so syntactically it's not
+                // in the loop.
+                block_body = _parse(reader, template, operator, null);
+            } else {
+                block_body = _parse(reader, template, operator, in_loop);
+            }
             if (operator === 'apply') {
                 if (!suffix) {
-                    throw new ParseError('apply missing method name on line ' +
-                                         line);
+                    reader.raise_parse_error('apply missing method name on line ' + line);
                 }
-                block = new _ApplyBlock(suffix, block_body);
+                block = new _ApplyBlock(suffix, line, block_body);
             } else if (operator === 'block') {
                 if (!suffix) {
-                    throw new ParseError('block missing name on line ' + line);
+                    reader.raise_parse_error('block missing name on line ' + line);
                 }
-                block = new _NamedBlock(suffix, block_body, template);
+                block = new _NamedBlock(suffix, block_body, template, line);
             } else {
-                block = new _ControlBlock(contents, block_body);
+                block = new _ControlBlock(contents, line, block_body);
             }
             body.chunks.push(block);
             continue;
+        } else if (array.contains(['break', 'continue'], operator)) {
+            if (!in_loop) {
+                reader.raise_parse_error(operator + ' outside ["for", "while"] block');
+            }
+            body.chunks.push(new _Statement(contents, line));
+            continue;
         } else {
-            throw new ParseError('unknown operator: ' + operator);
+            reader.raise_parse_error('unknown operator: ' + operator);
         }
     }
 };
-
-exports['buildin'] = buildin;
-exports['array'] = array;
-exports['object'] = object;
-exports['string'] = string;
-exports['StopIteration'] = StopIteration;
-exports['StringIO'] = StringIO;
-exports['escape'] = escape_;
-exports['Template'] = Template;
-exports['DictLoader'] = DictLoader;
