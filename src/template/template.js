@@ -30,18 +30,18 @@
 /**
  * @interface
  */
-var IWithItem = function(){};
+class IWithItem {
+    /**
+     * __enter__
+     * @return {IWithItem} .
+     */
+    __enter__() {};
 
-/**
- * __enter__
- * @return {IWithItem} .
- */
-IWithItem.prototype.__enter__ = function(){};
-
-/**
- * __exit__
- */
-IWithItem.prototype.__exit__ = function(){};
+    /**
+     * __exit__
+     */
+    __exit__() {};
+}
 
 var statement = {};
 
